@@ -6,6 +6,8 @@ from myosuite.envs.env_variants import register_env_variant
 
 curr_dir = os.path.dirname(os.path.abspath(__file__)).replace('\\', '/')
 
+print("FAR:> Registering Myo Envs")
+
 
 # utility to register envs with all muscle conditions
 def register_env_with_variants(id, entry_point, max_episode_steps, kwargs):
@@ -45,7 +47,7 @@ register_env_with_variants(
         'frame_skip': 5,
         'pos_th': 0.1,              # cover entire base of the receptacle
         'rot_th': np.inf,           # ignore rotation errors
-        'target_xyz_range': {'high':[0.2, -.1, 0.9], 'low':[0.0, -.35, 0.9]},
+        'target_xyz_range': {'high':[0, 0, 1.3], 'low':[-.5, -.5, .9]},
         'target_rxryrz_range': {'high':[0.0, 0.0, 0.0], 'low':[0.0, 0.0, 0.0]}
     }
 )

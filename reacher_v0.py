@@ -12,7 +12,7 @@ from myosuite.utils.quat_math import mat2euler, euler2quat
 
 class ReacherEnvV0(BaseV0):
 
-    DEFAULT_OBS_KEYS = ['hand_qpos', 'hand_qvel', 'goal_pos', 'reach_err', 'goal_rot', 'rot_err'] #n- , 'obj_pos', 'obj_rot'
+    DEFAULT_OBS_KEYS = ['hand_qpos', 'hand_qvel', 'goal_pos', 'reach_err', 'goal_rot', 'rot_err']
     DEFAULT_RWD_KEYS_AND_WEIGHTS = {
         "reach_dist": 100.0,
         "rot_dist": 1.0,
@@ -37,12 +37,10 @@ class ReacherEnvV0(BaseV0):
             weighted_reward_keys:list = DEFAULT_RWD_KEYS_AND_WEIGHTS,
             pos_th = .025,          # position error threshold
             rot_th = 0.262,         # rotation error threshold
-            drop_th = 3,#n_ 0.50,         # drop height threshold
+            drop_th = 0.50,         # drop height threshold
             **kwargs,
         ):
         self.palm_sid = self.sim.model.site_name2id("S_grasp")
-        #n- self.object_sid = self.sim.model.site_name2id("object_o")
-        #n- self.object_bid = self.sim.model.body_name2id("Object")
         self.goal_sid = self.sim.model.site_name2id("target_o")
         self.success_indicator_sid = self.sim.model.site_name2id("target_ball")
         self.goal_bid = self.sim.model.body_name2id("target")
@@ -71,14 +69,11 @@ class ReacherEnvV0(BaseV0):
         obs_dict['hand_qpos'] = sim.data.qpos[:-7].copy()
         obs_dict['hand_qpos_corrected'] = sim.data.qpos[:-6].copy()
         obs_dict['hand_qvel'] = sim.data.qvel[:-6].copy()*self.dt
-        #n- obs_dict['obj_pos'] = sim.data.site_xpos[self.object_sid]
         obs_dict['goal_pos'] = sim.data.site_xpos[self.goal_sid]
         obs_dict['palm_pos'] = sim.data.site_xpos[self.palm_sid]
-        #n- obs_dict['pos_err'] = obs_dict['goal_pos'] - obs_dict['obj_pos']
         obs_dict['reach_err'] = obs_dict['palm_pos'] - obs_dict['goal_pos']
-        #n- obs_dict['obj_rot'] = mat2euler(np.reshape(sim.data.site_xmat[self.object_sid],(3,3)))
         obs_dict['goal_rot'] = mat2euler(np.reshape(sim.data.site_xmat[self.goal_sid],(3,3)))
-        obs_dict['rot_err'] = obs_dict['goal_rot'] - obs_dict['goal_rot'] #n- obs_dict['obj_rot']
+        obs_dict['rot_err'] = obs_dict['goal_rot'] - obs_dict['goal_rot'] 
 
         if sim.model.na>0:
             obs_dict['act'] = sim.data.act[:].copy()
@@ -87,9 +82,10 @@ class ReacherEnvV0(BaseV0):
 
     def get_reward_dict(self, obs_dict):
         reach_dist = np.abs(np.linalg.norm(self.obs_dict['reach_err'], axis=-1))
-        #n- pos_dist = np.abs(np.linalg.norm(self.obs_dict['pos_err'], axis=-1))
         rot_dist = np.abs(np.linalg.norm(self.obs_dict['rot_err'], axis=-1))
         act_mag = np.linalg.norm(self.obs_dict['act'], axis=-1)/self.sim.model.na if self.sim.model.na !=0 else 0
+        moving = np.linalg.norm(self.obs_dict['hand_qvel'], axis=-1) > 0.005
+        print(np.linalg.norm(self.obs_dict['hand_qvel'], axis=-1))
         drop = reach_dist > self.drop_th
         rwd_dict = collections.OrderedDict((
             # Perform reward tuning here --
@@ -102,14 +98,14 @@ class ReacherEnvV0(BaseV0):
             # Must keys
             ('act_reg', -1.*act_mag),
             ('sparse', -rot_dist-10.0*reach_dist),
-            ('solved', (reach_dist<self.pos_th) and (rot_dist<self.rot_th) and (not drop) ),
+            ('solved', (reach_dist<self.pos_th) & (rot_dist<self.rot_th) & (~moving) & (~drop) ),
             ('done', drop),
         ))
-        rwd_dict['dense'] = np.sum([wt*rwd_dict[key] for key, wt in self.rwd_keys_wt.items()], axis=0)
+        rwd_dict['dense'] = np.sum([wt*float(rwd_dict[key]) for key, wt in self.rwd_keys_wt.items()], axis=0)
 
         # Success Indicator
         self.sim.model.site_rgba[self.success_indicator_sid, :2] = np.array([0, 2]) if rwd_dict['solved'] else np.array([2, 0])
-        self.sim.model.site_size[self.success_indicator_sid, :] =  np.array([.25,]) if rwd_dict['solved'] else np.array([0.1,]) # Variable target size
+        self.sim.model.site_size[self.success_indicator_sid, :] =  np.array([.05,]) if rwd_dict['solved'] else np.array([0.1,]) # Variable target size
         return rwd_dict
 
 
@@ -141,37 +137,6 @@ class ReacherEnvV0(BaseV0):
         self.sim.model.body_pos[self.goal_bid] = self.np_random.uniform(**self.target_xyz_range)
         self.sim.model.body_quat[self.goal_bid] = euler2quat(self.np_random.uniform(**self.target_rxryrz_range))
 
-
-        #n- if self.obj_xyz_range is not None:
-        #n-     self.sim.model.body_pos[self.object_bid] = self.np_random.uniform(**self.obj_xyz_range)
-
-
-        #n- if self.obj_geom_range is not None:
-        #n-     for body in ["Object", ]:
-        #n-         # object shapes and locations
-        #n-         bid = self.sim.model.body_name2id(body)
-        #n-         for gid in range(self.sim.model.body_geomnum[bid]):
-        #n-             gid+=self.sim.model.body_geomadr[bid] # get geom ids
-        #n-             # update type, size, and collision bounds
-        #n-             self.sim.model.geom_type[gid]=self.np_random.choice([2,3,4,5,6]) # random shape
-        #n-             self.sim.model.geom_size[gid]=self.np_random.uniform(low=self.obj_geom_range['low'], high=self.obj_geom_range['high']) # random size
-        #n-             self.sim.model.geom_aabb[gid][3:]= self.obj_geom_range['high'] # bounding box, (center, size)
-        #n-             self.sim.model.geom_rbound[gid] = 2.0*max(self.obj_geom_range['high']) # radius of bounding sphere
-        #n- 
-        #n-             self.sim.model.geom_pos[gid]=self.np_random.uniform(low=-1.0*self.sim.model.geom_size[gid], high=self.sim.model.geom_size[gid]) # random pos
-        #n-             self.sim.model.geom_quat[gid]=euler2quat(self.np_random.uniform(low=(-np.pi/2, -np.pi/2, -np.pi/2), high=(np.pi/2, np.pi/2, np.pi/2)) ) # random quat
-        #n-             self.sim.model.geom_rgba[gid]=self.np_random.uniform(low=[.2, .2, .2, 1], high=[.9, .9, .9, 1]) # random color
-        #n- 
-        #n-             # friction changes
-        #n-             if self.obj_friction_range is not None:
-        #n-                 self.sim.model.geom_friction[gid] = self.np_random.uniform(**self.obj_friction_range)
-        #n- 
-        #n-         # mass changes
-        #n-         #n- if self.obj_mass_range is not None:
-        #n-         #n-     self.sim.model.body_mass[self.object_bid] = self.np_random.uniform(**self.obj_mass_range)
-        #n-         #n-     # ??? Derive quantities wont be updated.
-        #n- 
-        #n-         self.sim.forward()
 
         # randomize init arms pose
         if self.qpos_noise_range is not None:
